@@ -16,13 +16,13 @@
 
 ## Step 2: Configure Environment Variables
 
-Open `.env.local` and fill in your values:
+Open `.env.local` and fill in your values (or add them to Vercel/Production settings):
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=https://q-pro.vercel.app
 NEXT_PUBLIC_SUPER_ADMIN_EMAIL=rikashrikash04@gmail.com
 NEXT_PUBLIC_OFFICE_ADMIN_EMAILS=resulthub001@gmail.com,rikash04rikash@gmail.com
 ```
@@ -44,9 +44,9 @@ This will create all tables, indexes, and Row Level Security policies.
 1. In Supabase Dashboard → **Authentication → Providers**
 2. Enable **Google** provider
 3. Add your Google OAuth credentials (from Google Cloud Console)
-4. Set the **Redirect URL** to: `http://localhost:3000/auth/callback`
-
-For production, add your Vercel URL as well.
+4. Set the **Redirect URL** to: 
+   - Local: `http://localhost:3000/auth/callback`
+   - Production: `https://q-pro.vercel.app/auth/callback`
 
 ---
 
@@ -59,13 +59,18 @@ For production, add your Vercel URL as well.
 
 ---
 
-## Step 6: Run the Development Server
+## Step 6: Run the Server
 
+### Local Development:
 ```bash
-npm run dev
+# Increased header size to avoid 431 error
+$env:NODE_OPTIONS='--max-http-header-size=65536'; npm run dev
 ```
 
-Visit `http://localhost:3000`
+Visit `http://localhost:3000` (or `http://localhost:3001` if 3000 is busy)
+
+### Production (Vercel):
+The project is already configured for Vercel. Make sure all environment variables are added in the Vercel project settings.
 
 ---
 
