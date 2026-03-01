@@ -9,6 +9,9 @@ export const metadata: Metadata = {
     description:
         'Q-Pro is a professional SaaS platform that helps hospitals, government offices, and public services manage digital queues with real-time updates and seamless public access.',
     keywords: ['queue management', 'digital queue', 'token system', 'hospital queue', 'government queue'],
+    icons: {
+        icon: '/icon.svg',
+    },
     openGraph: {
         title: 'Q-Pro — Smart Queue Management Platform',
         description: 'Professional multi-tenant queue management for hospitals, government offices, and public services.',
