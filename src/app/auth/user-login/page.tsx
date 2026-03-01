@@ -239,7 +239,7 @@ function UserLoginContent() {
                                             )}
                                         </button>
                                         <p className="text-center text-xs text-slate-400">
-                                            No password required — we'll email you a one-tap sign-in link
+                                            No password required — we&apos;ll email you a one-tap sign-in link
                                         </p>
                                     </form>
                                 </motion.div>
