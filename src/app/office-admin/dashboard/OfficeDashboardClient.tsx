@@ -1,18 +1,20 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import {
     Users, TicketCheck, CheckCircle2, SkipForward,
     PlayCircle, PauseCircle, XCircle, ChevronRight,
-    Activity, ArrowRight, Clock, RefreshCw
+    Activity, ArrowRight, Clock, RefreshCw, QrCode,
+    Copy, Download, Check
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import StatCard from '@/components/ui/StatCard'
 import { formatTokenNumber, formatTime } from '@/lib/utils'
 import { TOKEN_STATUS_COLORS } from '@/lib/constants'
 import type { Office, QueueToken, OfficeQueueState } from '@/lib/types'
+import { QRCodeSVG } from 'qrcode.react'
 
 interface Props {
     office: Office
@@ -28,7 +30,50 @@ export default function OfficeDashboardClient({ office, officeId, stats: initSta
     const [recentTokens, setRecentTokens] = useState(initTokens)
     const [currentServing, setCurrentServing] = useState<QueueToken | null>(null)
     const [loading, setLoading] = useState<string | null>(null)
+    const [copied, setCopied] = useState(false)
+    const qrRef = useRef<SVGSVGElement>(null)
     const supabase = createClient()
+
+    const joinUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/offices/${office?.slug}` 
+        : ''
+
+    const copyToClipboard = async () => {
+        try {
+            await navigator.clipboard.writeText(joinUrl)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch (err) {
+            console.error('Failed to copy!', err)
+        }
+    }
+
+    const downloadQR = () => {
+        if (!qrRef.current) return
+        
+        const svg = qrRef.current
+        const svgData = new XMLSerializer().serializeToString(svg)
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        const img = new Image()
+        
+        img.onload = () => {
+            canvas.width = img.width + 40 // Add padding
+            canvas.height = img.height + 40
+            if (ctx) {
+                ctx.fillStyle = 'white'
+                ctx.fillRect(0, 0, canvas.width, canvas.height)
+                ctx.drawImage(img, 20, 20)
+                const pngFile = canvas.toDataURL('image/png')
+                const downloadLink = document.createElement('a')
+                downloadLink.download = `QR-${office?.name || 'office'}.png`
+                downloadLink.href = pngFile
+                downloadLink.click()
+            }
+        }
+        
+        img.src = 'data:image/svg+xml;base64,' + btoa(svgData)
+    }
 
     const fetchStats = useCallback(async () => {
         const today = new Date().toISOString().slice(0, 10)
@@ -269,14 +314,74 @@ export default function OfficeDashboardClient({ office, officeId, stats: initSta
                             {queueState?.is_closed ? 'Reopen Queue' : 'Close Queue'}
                         </button>
                     </div>
+
+                    {/* Queue Actions */}
+                    <div className="mt-6 pt-6 border-t border-slate-100">
+                        <Link href="/office-admin/queue" className="btn-primary w-full py-2.5">
+                            <TicketCheck className="w-4 h-4" />
+                            Manage Full Queue
+                        </Link>
+                    </div>
+                </motion.div>
+
+                {/* QR Code Section */}
+                <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.4 }}
+                    className="card lg:col-span-3 flex flex-col items-center justify-center text-center p-8"
+                >
+                    <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mb-4">
+                        <QrCode className="w-6 h-6 text-brand-600" />
+                    </div>
+                    <h2 className="text-xl font-bold text-slate-900 mb-2">QR Code for Queue</h2>
+                    <p className="text-sm text-slate-500 mb-8 max-w-sm">
+                        Display this QR code at your office. Customers can scan it to join the queue directly from their phones.
+                    </p>
+
+                    <div className="p-6 rounded-3xl bg-white shadow-xl shadow-slate-200/50 border border-slate-100 mb-8">
+                        <QRCodeSVG
+                            id="office-qr"
+                            value={joinUrl}
+                            size={200}
+                            level="H"
+                            includeMargin={false}
+                            ref={qrRef}
+                        />
+                    </div>
+
+                    <div className="w-full max-w-md space-y-3">
+                        <div className="flex items-center gap-2 p-1.5 pl-4 rounded-xl bg-slate-50 border border-slate-200">
+                            <span className="text-xs font-medium text-slate-400 truncate flex-1 text-left">
+                                {joinUrl}
+                            </span>
+                            <button
+                                onClick={copyToClipboard}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                                    copied ? 'bg-emerald-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50 shadow-sm'
+                                }`}
+                            >
+                                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                {copied ? 'Copied!' : 'Copy Link'}
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={downloadQR}
+                            className="w-full btn-secondary py-3 flex items-center justify-center gap-2"
+                        >
+                            <Download className="w-4 h-4" />
+                            Download QR Code (PNG)
+                        </button>
+                    </div>
                 </motion.div>
 
                 {/* Recent Tokens */}
                 <motion.div
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="card lg:col-span-3"
+                    transition={{ delay: 0.5 }}
+                    className="card lg:col-span-5"
                 >
                     <div className="flex items-center justify-between mb-5">
                         <h2 className="font-semibold text-slate-900">Recent Tokens</h2>
