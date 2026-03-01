@@ -93,7 +93,14 @@ export default function LandingPage() {
                         <Link href="/offices" className="btn-secondary hidden sm:inline-flex">
                             View Offices
                         </Link>
-                        <Link href="/auth/login" className="btn-primary">
+                        <Link href="/auth/user-login" className="btn-primary" id="user-login-nav-btn">
+                            User Login
+                        </Link>
+                        <Link
+                            href="/auth/login"
+                            className="hidden md:inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-200 transition-all duration-150"
+                            id="admin-login-nav-btn"
+                        >
                             Admin Login
                         </Link>
                     </div>
@@ -125,14 +132,20 @@ export default function LandingPage() {
                         <p className="text-lg sm:text-xl text-slate-600 mb-10 max-w-2xl mx-auto leading-relaxed">
                             Q-Pro brings digital queue management to hospitals, government offices, post offices, and more — with live updates, smart estimates, and zero friction.
                         </p>
-                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
                             <Link href="/offices" className="btn-primary text-base px-7 py-3.5 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150">
                                 Join a Queue Now
                                 <ArrowRight className="w-5 h-5" />
                             </Link>
-                            <Link href="/auth/login" className="btn-secondary text-base px-7 py-3.5">
-                                Admin Dashboard
+                            <Link href="/auth/user-login" className="btn-secondary text-base px-7 py-3.5" id="user-login-hero-btn">
+                                User Sign In
                                 <ChevronRight className="w-4 h-4" />
+                            </Link>
+                        </div>
+                        <div className="flex items-center justify-center gap-2">
+                            <p className="text-xs text-slate-500">Staff or office administrator?</p>
+                            <Link href="/auth/login" className="text-xs font-semibold text-brand-600 hover:text-brand-700 underline underline-offset-2" id="admin-login-hero-link">
+                                Admin Login →
                             </Link>
                         </div>
                     </motion.div>

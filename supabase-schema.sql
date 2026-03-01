@@ -55,6 +55,7 @@ create table if not exists queue_tokens (
   token_number        int not null,
   user_name           text not null,
   user_phone          text,
+  user_id             uuid references auth.users(id) on delete set null,
   status              text not null default 'waiting' check (status in ('waiting','serving','served','skipped')),
   joined_at           timestamptz not null default now(),
   served_at           timestamptz,
@@ -66,6 +67,14 @@ create index if not exists idx_queue_tokens_office_date
 
 create index if not exists idx_queue_tokens_status
   on queue_tokens(office_id, status);
+
+create index if not exists idx_queue_tokens_user_id
+  on queue_tokens(user_id);
+
+-- Enforce only one active token per user per office
+create unique index if not exists idx_queue_tokens_user_active_per_office 
+  on queue_tokens(user_id, office_id) 
+  where status in ('waiting', 'serving');
 
 -- ============================================================
 -- 5. OFFICE QUEUE STATE TABLE
@@ -204,13 +213,21 @@ create policy "user_roles_admin_read_own" on user_roles
 -- QUEUE TOKENS policies
 -- -------------------------------------------------------
 
--- Anyone can insert a token (join queue without login)
-create policy "queue_tokens_public_insert" on queue_tokens
-  for insert with check (true);
+-- Anyone can insert a token (if logged in, user_id must match)
+create policy "queue_tokens_insert" on queue_tokens
+  for insert with check (
+    (auth.uid() is null) or (auth.uid() = user_id)
+  );
 
 -- Anyone can read tokens (to see queue status)
 create policy "queue_tokens_public_read" on queue_tokens
   for select using (true);
+
+-- Logged-in users can read their own tokens
+create policy "queue_tokens_user_read" on queue_tokens
+  for select using (
+    (auth.uid() = user_id) or (user_id is null)
+  );
 
 -- Admins can update tokens (serve/skip)
 create policy "queue_tokens_admin_update" on queue_tokens

@@ -48,11 +48,13 @@ export interface QueueToken {
     token_number: number
     user_name: string
     user_phone: string | null
+    user_id?: string | null
     status: TokenStatus
     joined_at: string
     served_at: string | null
     estimated_wait_mins: number
     departments?: Department
+    offices?: Office
 }
 
 export interface OfficeQueueState {

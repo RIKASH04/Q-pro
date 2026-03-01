@@ -1,19 +1,59 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { Chrome, Mail, Lock, ArrowRight, Layers } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Chrome, Mail, Lock, ArrowRight, Layers, Send, Sparkles } from 'lucide-react'
 
 export default function LoginPage() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
-    const [mode, setMode] = useState<'login' | 'signup'>('login')
+    const [message, setMessage] = useState('')
+    const [mode, setMode] = useState<'login' | 'signup' | 'magic-link'>('login')
     const supabase = createClient()
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const next = searchParams.get('next')
+
+    useEffect(() => {
+        // Check if already logged in and has active token
+        const checkSession = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                const { data: token } = await supabase
+                    .from('queue_tokens')
+                    .select('id, status')
+                    .eq('user_id', user.id)
+                    .in('status', ['waiting', 'serving'])
+                    .maybeSingle()
+
+                if (token) {
+                    router.push('/my-queue')
+                } else if (next) {
+                    router.push(next)
+                } else {
+                    // Check if admin
+                    const { data: roleData } = await supabase
+                        .from('user_roles')
+                        .select('role')
+                        .eq('user_id', user.id)
+                        .single()
+
+                    if (roleData?.role === 'super_admin') {
+                        router.push('/super-admin/dashboard')
+                    } else if (roleData?.role === 'office_admin') {
+                        router.push('/office-admin/dashboard')
+                    } else {
+                        router.push('/')
+                    }
+                }
+            }
+        }
+        checkSession()
+    }, [supabase, router, next])
 
     const handleGoogleLogin = async () => {
         setLoading(true)
@@ -21,13 +61,34 @@ export default function LoginPage() {
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: `${window.location.origin}/auth/callback`,
+                redirectTo: `${window.location.origin}/auth/callback${next ? `?next=${next}` : ''}`,
             },
         })
         if (error) {
             setError(error.message)
             setLoading(false)
         }
+    }
+
+    const handleMagicLink = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setLoading(true)
+        setError('')
+        setMessage('')
+
+        const { error } = await supabase.auth.signInWithOtp({
+            email,
+            options: {
+                emailRedirectTo: `${window.location.origin}/auth/callback${next ? `?next=${next}` : ''}`,
+            },
+        })
+
+        if (error) {
+            setError(error.message)
+        } else {
+            setMessage('Check your email for the magic link!')
+        }
+        setLoading(false)
     }
 
     const handleEmailAuth = async (e: React.FormEvent) => {
@@ -42,6 +103,20 @@ export default function LoginPage() {
                 setLoading(false)
                 return
             }
+            
+            // Check for active token first
+            const { data: token } = await supabase
+                .from('queue_tokens')
+                .select('id')
+                .eq('user_id', data.user?.id)
+                .in('status', ['waiting', 'serving'])
+                .maybeSingle()
+
+            if (token) {
+                router.push('/my-queue')
+                return
+            }
+
             // Redirect based on role
             const { data: roleData } = await supabase
                 .from('user_roles')
@@ -53,6 +128,8 @@ export default function LoginPage() {
                 router.push('/super-admin/dashboard')
             } else if (roleData?.role === 'office_admin') {
                 router.push('/office-admin/dashboard')
+            } else if (next) {
+                router.push(next)
             } else {
                 router.push('/')
             }
@@ -60,7 +137,7 @@ export default function LoginPage() {
             const { error } = await supabase.auth.signUp({
                 email,
                 password,
-                options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+                options: { emailRedirectTo: `${window.location.origin}/auth/callback${next ? `?next=${next}` : ''}` },
             })
             if (error) {
                 setError(error.message)
@@ -68,7 +145,7 @@ export default function LoginPage() {
                 return
             }
             setError('')
-            alert('Check your email to confirm your account!')
+            setMessage('Check your email to confirm your account!')
             setMode('login')
         }
         setLoading(false)
@@ -91,10 +168,10 @@ export default function LoginPage() {
                         <span className="text-2xl font-bold text-slate-900">Q‑Pro</span>
                     </div>
                     <h1 className="text-xl font-semibold text-slate-800">
-                        {mode === 'login' ? 'Welcome back' : 'Create account'}
+                        {mode === 'login' ? 'Welcome back' : mode === 'magic-link' ? 'Magic Sign In' : 'Create account'}
                     </h1>
                     <p className="text-sm text-slate-500 mt-1">
-                        {mode === 'login' ? 'Sign in to your Q-Pro account' : 'Join Q-Pro queue management'}
+                        {mode === 'login' ? 'Sign in to your Q-Pro account' : mode === 'magic-link' ? 'We will email you a login link' : 'Join Q-Pro queue management'}
                     </p>
                 </motion.div>
 
@@ -104,12 +181,29 @@ export default function LoginPage() {
                     transition={{ duration: 0.5, delay: 0.1 }}
                     className="card"
                 >
-                    {/* Error */}
-                    {error && (
-                        <div className="mb-4 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
-                            {error}
-                        </div>
-                    )}
+                    {/* Status Messages */}
+                    <AnimatePresence mode="wait">
+                        {error && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mb-4 p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
+                        {message && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mb-4 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm"
+                            >
+                                {message}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
                     {/* Google */}
                     <button
@@ -127,7 +221,7 @@ export default function LoginPage() {
                         <div className="flex-1 h-px bg-slate-100" />
                     </div>
 
-                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                    <form onSubmit={mode === 'magic-link' ? handleMagicLink : handleEmailAuth} className="space-y-4">
                         <div>
                             <label className="label" htmlFor="email">Email address</label>
                             <div className="relative">
@@ -144,38 +238,57 @@ export default function LoginPage() {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="label" htmlFor="password">Password</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input
-                                    id="password"
-                                    type="password"
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                    placeholder="••••••••"
-                                    required
-                                    minLength={6}
-                                    className="input pl-10"
-                                />
+                        {mode !== 'magic-link' && (
+                            <div>
+                                <label className="label" htmlFor="password">Password</label>
+                                <div className="relative">
+                                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        id="password"
+                                        type="password"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        placeholder="••••••••"
+                                        required
+                                        minLength={6}
+                                        className="input pl-10"
+                                    />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base">
-                            {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-                            {!loading && <ArrowRight className="w-4 h-4" />}
+                            {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : mode === 'magic-link' ? 'Send Magic Link' : 'Create Account'}
+                            {!loading && (mode === 'magic-link' ? <Send className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />)}
                         </button>
                     </form>
 
-                    <p className="text-center text-sm text-slate-500 mt-5">
-                        {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
+                    <div className="flex flex-col gap-3 mt-6 pt-6 border-t border-slate-100">
                         <button
-                            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError('') }}
-                            className="text-brand-600 font-semibold hover:text-brand-700"
+                            onClick={() => { setMode(mode === 'magic-link' ? 'login' : 'magic-link'); setError(''); setMessage('') }}
+                            className="text-sm font-medium text-slate-600 hover:text-brand-600 flex items-center justify-center gap-2"
                         >
-                            {mode === 'login' ? 'Sign up' : 'Sign in'}
+                            {mode === 'magic-link' ? (
+                                <>
+                                    <Lock className="w-4 h-4" /> Sign in with Password
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles className="w-4 h-4" /> Sign in with Magic Link
+                                </>
+                            )}
                         </button>
-                    </p>
+                        
+                        <p className="text-center text-sm text-slate-500">
+                            {mode === 'login' ? "Don't have an account?" : mode === 'magic-link' ? "New to Q-Pro?" : 'Already have an account?'}{' '}
+                            <button
+                                onClick={() => { setMode(mode === 'signup' ? 'login' : 'signup'); setError(''); setMessage('') }}
+                                className="text-brand-600 font-semibold hover:text-brand-700"
+                            >
+                                {mode === 'signup' ? 'Sign in' : 'Create account'}
+                            </button>
+                        </p>
+                    </div>
                 </motion.div>
 
                 <p className="text-center text-xs text-slate-400 mt-6">

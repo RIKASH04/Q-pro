@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
     ChevronLeft, Layers, MapPin, Phone, Clock, Users,
-    CheckCircle2, AlertCircle, Loader2, User, Smartphone
+    CheckCircle2, AlertCircle, Loader2, User, Smartphone, LogIn
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { OFFICE_TYPE_ICONS, OFFICE_TYPE_LABELS } from '@/lib/constants'
@@ -24,20 +24,67 @@ export default function JoinQueueClient({ office, departments, queueState }: Pro
     const [phone, setPhone] = useState('')
     const [deptId, setDeptId] = useState('')
     const [loading, setLoading] = useState(false)
+    const [checkingAuth, setCheckingAuth] = useState(true)
+    const [user, setUser] = useState<any>(null)
     const [error, setError] = useState('')
     const [success, setSuccess] = useState<{ tokenId: string; tokenNumber: number; waitMins: number } | null>(null)
     const router = useRouter()
+    const supabase = createClient()
 
     const isClosed = queueState?.is_closed
     const isPaused = queueState?.is_paused
 
+    useEffect(() => {
+        const checkUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            setUser(user)
+            
+            if (user) {
+                // Check for existing active token
+                const { data: token } = await supabase
+                    .from('queue_tokens')
+                    .select('id')
+                    .eq('user_id', user.id)
+                    .in('status', ['waiting', 'serving'])
+                    .maybeSingle()
+
+                if (token) {
+                    router.push('/my-queue')
+                    return
+                }
+                
+                // Pre-fill name from metadata if available
+                if (user.user_metadata?.full_name) {
+                    setName(user.user_metadata.full_name)
+                }
+            }
+            setCheckingAuth(false)
+        }
+        checkUser()
+    }, [supabase, router])
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (!user) {
+            router.push(`/auth/login?next=/offices/${office.slug}`)
+            return
+        }
         if (!name.trim()) return setError('Please enter your name')
         setLoading(true)
         setError('')
 
-        const supabase = createClient()
+        // Double check for active token before inserting
+        const { data: existingToken } = await supabase
+            .from('queue_tokens')
+            .select('id')
+            .eq('user_id', user.id)
+            .in('status', ['waiting', 'serving'])
+            .maybeSingle()
+
+        if (existingToken) {
+            router.push('/my-queue')
+            return
+        }
 
         // Get today's token count for this office
         const today = new Date().toISOString().slice(0, 10)
@@ -70,6 +117,7 @@ export default function JoinQueueClient({ office, departments, queueState }: Pro
                 token_number: tokenNumber,
                 user_name: name.trim(),
                 user_phone: phone.trim() || null,
+                user_id: user.id,
                 status: 'waiting',
                 estimated_wait_mins: waitMins,
             })
@@ -86,20 +134,48 @@ export default function JoinQueueClient({ office, departments, queueState }: Pro
         setLoading(false)
     }
 
+    if (checkingAuth) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+                <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+                    <p className="text-sm text-slate-500 font-medium">Checking queue status...</p>
+                </div>
+            </div>
+        )
+    }
+
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Header */}
             <header className="bg-white border-b border-slate-100 sticky top-0 z-30">
-                <div className="page-container flex items-center gap-3 h-16">
-                    <Link href="/offices" className="btn-ghost p-2">
-                        <ChevronLeft className="w-5 h-5" />
-                    </Link>
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-sm">
-                            <Layers className="w-4 h-4 text-white" />
+                <div className="page-container flex items-center justify-between h-16">
+                    <div className="flex items-center gap-3">
+                        <Link href="/offices" className="btn-ghost p-2">
+                            <ChevronLeft className="w-5 h-5" />
+                        </Link>
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-sm">
+                                <Layers className="w-4 h-4 text-white" />
+                            </div>
+                            <span className="text-base font-bold text-slate-900">Q‑Pro</span>
                         </div>
-                        <span className="text-base font-bold text-slate-900">Q‑Pro</span>
                     </div>
+                    
+                    {user ? (
+                        <div className="flex items-center gap-3">
+                            <Link href="/my-queue" className="text-sm font-medium text-brand-600 hover:text-brand-700">
+                                My Active Token
+                            </Link>
+                        </div>
+                    ) : (
+                        <Link 
+                            href={`/auth/login?next=/offices/${office.slug}`}
+                            className="btn-ghost text-sm font-medium flex items-center gap-2"
+                        >
+                            <LogIn className="w-4 h-4" /> Sign In
+                        </Link>
+                    )}
                 </div>
             </header>
 
@@ -186,7 +262,7 @@ export default function JoinQueueClient({ office, departments, queueState }: Pro
                             </div>
 
                             <button
-                                onClick={() => router.push(`/offices/${office.slug}/token/${success.tokenId}`)}
+                                onClick={() => router.push('/my-queue')}
                                 className="btn-primary w-full py-3"
                             >
                                 Track Live Status
@@ -201,7 +277,9 @@ export default function JoinQueueClient({ office, departments, queueState }: Pro
                             className="card"
                         >
                             <h2 className="text-lg font-semibold text-slate-900 mb-1">Join the Queue</h2>
-                            <p className="text-sm text-slate-500 mb-6">Fill in your details to get a token</p>
+                            <p className="text-sm text-slate-500 mb-6">
+                                {user ? 'Confirm your details to get a token' : 'Please sign in to join the queue'}
+                            </p>
 
                             {error && (
                                 <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -209,76 +287,94 @@ export default function JoinQueueClient({ office, departments, queueState }: Pro
                                 </div>
                             )}
 
-                            <form onSubmit={handleSubmit} className="space-y-4">
-                                <div>
-                                    <label className="label" htmlFor="user-name">Your Name *</label>
-                                    <div className="relative">
-                                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                        <input
-                                            id="user-name"
-                                            type="text"
-                                            value={name}
-                                            onChange={e => setName(e.target.value)}
-                                            placeholder="Enter your full name"
-                                            required
-                                            className="input pl-10"
-                                        />
+                            {!user ? (
+                                <div className="text-center py-6">
+                                    <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
+                                        <LogIn className="w-8 h-8 text-brand-600" />
                                     </div>
+                                    <h3 className="text-base font-bold text-slate-900 mb-2">Sign in required</h3>
+                                    <p className="text-sm text-slate-500 mb-6 px-4">
+                                        To join the queue and track your status in real-time, please sign in with your account.
+                                    </p>
+                                    <Link 
+                                        href={`/auth/login?next=/offices/${office.slug}`}
+                                        className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+                                    >
+                                        <LogIn className="w-4 h-4" /> Continue to Sign In
+                                    </Link>
                                 </div>
-
-                                <div>
-                                    <label className="label" htmlFor="user-phone">
-                                        Phone Number <span className="text-slate-400 font-normal">(optional)</span>
-                                    </label>
-                                    <div className="relative">
-                                        <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                        <input
-                                            id="user-phone"
-                                            type="tel"
-                                            value={phone}
-                                            onChange={e => setPhone(e.target.value)}
-                                            placeholder="+91 98765 43210"
-                                            className="input pl-10"
-                                        />
-                                    </div>
-                                </div>
-
-                                {departments.length > 0 && (
+                            ) : (
+                                <form onSubmit={handleSubmit} className="space-y-4">
                                     <div>
-                                        <label className="label" htmlFor="dept-select">Department / Service</label>
-                                        <select
-                                            id="dept-select"
-                                            value={deptId}
-                                            onChange={e => setDeptId(e.target.value)}
-                                            className="input"
-                                        >
-                                            <option value="">— Select department (optional) —</option>
-                                            {departments.map(d => (
-                                                <option key={d.id} value={d.id}>
-                                                    {d.name} (~{d.avg_service_time_mins} min)
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <label className="label" htmlFor="user-name">Your Name *</label>
+                                        <div className="relative">
+                                            <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                            <input
+                                                id="user-name"
+                                                type="text"
+                                                value={name}
+                                                onChange={e => setName(e.target.value)}
+                                                placeholder="Enter your full name"
+                                                required
+                                                className="input pl-10"
+                                            />
+                                        </div>
                                     </div>
-                                )}
 
-                                <button
-                                    type="submit"
-                                    disabled={loading || !!isClosed}
-                                    className="btn-primary w-full py-3 text-base disabled:opacity-60"
-                                    id="join-queue-btn"
-                                >
-                                    {loading ? (
-                                        <><Loader2 className="w-4 h-4 animate-spin" /> Generating Token...</>
-                                    ) : (
-                                        'Get My Token'
+                                    <div>
+                                        <label className="label" htmlFor="user-phone">
+                                            Phone Number <span className="text-slate-400 font-normal">(optional)</span>
+                                        </label>
+                                        <div className="relative">
+                                            <Smartphone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                            <input
+                                                id="user-phone"
+                                                type="tel"
+                                                value={phone}
+                                                onChange={e => setPhone(e.target.value)}
+                                                placeholder="+91 98765 43210"
+                                                className="input pl-10"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {departments.length > 0 && (
+                                        <div>
+                                            <label className="label" htmlFor="dept-select">Department / Service</label>
+                                            <select
+                                                id="dept-select"
+                                                value={deptId}
+                                                onChange={e => setDeptId(e.target.value)}
+                                                required
+                                                className="input"
+                                            >
+                                                <option value="">Select a department</option>
+                                                {departments.map(d => (
+                                                    <option key={d.id} value={d.id}>{d.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     )}
-                                </button>
 
-                                {isClosed && (
-                                    <p className="text-center text-xs text-red-500">Queue is closed. Please come back later.</p>
-                                )}
-                            </form>
+                                    <button
+                                        type="submit"
+                                        disabled={loading || isClosed || isPaused}
+                                        className="btn-primary w-full py-3 mt-4 flex items-center justify-center gap-2"
+                                    >
+                                        {loading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                Generating Token...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle2 className="w-4 h-4" />
+                                                Join Queue
+                                            </>
+                                        )}
+                                    </button>
+                                </form>
+                            )}
                         </motion.div>
                     )}
                 </AnimatePresence>
